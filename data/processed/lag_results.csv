@@ -1,0 +1,28 @@
+model,lag_weeks,rr,rr_low,rr_high,aic,significant
+Main: share of provinces above p90 (per 10 pp),0,0.982,0.896,1.077,2305.347,False
+Main: share of provinces above p90 (per 10 pp),1,0.994,0.905,1.092,2305.47,False
+Main: share of provinces above p90 (per 10 pp),2,1.073,0.978,1.176,2303.152,False
+Main: share of provinces above p90 (per 10 pp),3,1.17,1.074,1.275,2291.592,True
+Main: share of provinces above p90 (per 10 pp),4,1.134,1.043,1.234,2296.266,True
+Main: share of provinces above p90 (per 10 pp),5,1.138,1.052,1.231,2294.567,True
+Main: share of provinces above p90 (per 10 pp),6,1.122,1.036,1.216,2297.166,True
+Main: share of provinces above p90 (per 10 pp),7,1.068,0.984,1.16,2302.944,False
+Main: share of provinces above p90 (per 10 pp),8,1.038,0.95,1.134,2304.798,False
+Sensitivity: mean weekly rain (per 50 mm),0,0.964,0.719,1.292,2305.426,False
+Sensitivity: mean weekly rain (per 50 mm),1,1.003,0.751,1.339,2305.486,False
+Sensitivity: mean weekly rain (per 50 mm),2,1.294,0.962,1.74,2302.517,False
+Sensitivity: mean weekly rain (per 50 mm),3,1.693,1.286,2.228,2290.964,True
+Sensitivity: mean weekly rain (per 50 mm),4,1.649,1.26,2.158,2291.929,True
+Sensitivity: mean weekly rain (per 50 mm),5,1.568,1.211,2.03,2293.721,True
+Sensitivity: mean weekly rain (per 50 mm),6,1.599,1.225,2.088,2293.382,True
+Sensitivity: mean weekly rain (per 50 mm),7,1.328,1.014,1.739,2301.175,True
+Sensitivity: mean weekly rain (per 50 mm),8,1.283,0.955,1.725,2302.703,False
+Sensitivity: main without 2020-2021,0,1.028,0.931,1.136,1539.663,False
+Sensitivity: main without 2020-2021,1,1.003,0.913,1.101,1539.966,False
+Sensitivity: main without 2020-2021,2,1.049,0.956,1.15,1538.922,False
+Sensitivity: main without 2020-2021,3,1.173,1.075,1.279,1526.228,True
+Sensitivity: main without 2020-2021,4,1.117,1.021,1.221,1533.781,True
+Sensitivity: main without 2020-2021,5,1.054,0.961,1.156,1538.696,False
+Sensitivity: main without 2020-2021,6,1.038,0.947,1.138,1539.319,False
+Sensitivity: main without 2020-2021,7,0.989,0.906,1.079,1539.907,False
+Sensitivity: main without 2020-2021,8,1.011,0.92,1.11,1539.918,False
