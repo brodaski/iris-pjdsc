@@ -257,29 +257,52 @@ with tab_outlook:
                    "Low spots and blocked drains can still flood.")
     if level:
         f = exposed(bgy, share_col)
+        # Colour by density, not count: a count map paints large barangays dark and leaves Manila's many small,
+        # crowded barangays pale. Density spans 4 orders of magnitude, so the colour uses a log scale.
+        f = f.assign(vuln_km2=f["vuln_risk"] / f["area_km2"])
+        f = f.assign(log_km2=np.log10(f["vuln_km2"].clip(lower=1)))
         a, b, c = st.columns(3)
         a.metric("Barangays with any area in these zones", f"{len(f):,}")
         b.metric("People in the zones expected to flood", f"{f['people_risk'].sum():,.0f}")
         c.metric("Of them, under 5 or 65+", f"{f['vuln_risk'].sum():,.0f}")
+        by_density = st.radio("Colour the map by", ["Vulnerable people per km²", "Number of vulnerable people"],
+                              horizontal=True, key="outlook_colour",
+                              help="Per km² (default) keeps Manila's many small, crowded barangays from looking "
+                                   "safe next to large ones. The number sets how much to stock.") == "Vulnerable people per km²"
+        st.caption("Per km²: children under 5 and adults 65+ in the flooding zones per km² of barangay, on a log scale. "
+                   "The table gives both, so counts can still size supplies.")
         left, right = st.columns([1, 1])
         with left:
-            ofig = px.choropleth(f, geojson=geo, locations="bgy_code", featureidkey="properties.bgy_code",
-                                 color="vuln_risk", color_continuous_scale=cmap,
-                                 range_color=(0, f["vuln_risk"].quantile(0.98)), hover_name="barangay",
-                                 hover_data={"city": True, "people_risk": ":,.0f", "vuln_risk": ":,.0f", "bgy_code": False},
-                                 labels={"vuln_risk": "Under 5 or 65+ at risk", "people_risk": "People at risk",
-                                         "city": "City"})
+            hover = {"city": True, "people_risk": ":,.0f", "vuln_risk": ":,.0f", "vuln_km2": ":,.0f",
+                     "log_km2": False, "bgy_code": False}
+            labels = {"vuln_km2": "Under 5 or 65+ at risk per km²", "vuln_risk": "Under 5 or 65+ at risk",
+                      "people_risk": "People at risk", "city": "City"}
+            if by_density:
+                ticks = [v for v in (1, 10, 100, 1000, 10000, 100000) if v <= f["vuln_km2"].max() * 1.5]
+                ofig = px.choropleth(f, geojson=geo, locations="bgy_code", featureidkey="properties.bgy_code",
+                                     color="log_km2", color_continuous_scale=cmap,
+                                     range_color=(0, f["log_km2"].quantile(0.99)), hover_name="barangay",
+                                     hover_data=hover, labels=labels)
+                ofig.update_coloraxes(colorbar=dict(title="Under 5 or 65+<br>at risk per km²",
+                                                    tickvals=[np.log10(v) for v in ticks],
+                                                    ticktext=[f"{v:,}" for v in ticks]))
+            else:
+                ofig = px.choropleth(f, geojson=geo, locations="bgy_code", featureidkey="properties.bgy_code",
+                                     color="vuln_risk", color_continuous_scale=cmap,
+                                     range_color=(0, f["vuln_risk"].quantile(0.98)), hover_name="barangay",
+                                     hover_data=hover, labels=labels)
             ofig.update_geos(visible=False, projection_type="mercator", lonaxis_range=[120.9, 121.14],
                              lataxis_range=[14.34, 14.79])
-            ofig.update_traces(marker_line_width=0.2, marker_line_color="white")
+            ofig.update_traces(marker_line_width=0)   # borders would whiten Manila's tiny barangays
             ofig.update_layout(height=560, margin=dict(l=0, r=0, t=10, b=0))
             st.plotly_chart(ofig, width="stretch")
         with right:
-            st.dataframe(f.sort_values("vuln_risk", ascending=False)[["barangay", "city", "people_risk", "vuln_risk"]]
-                         .round(0).rename(columns={"barangay": "Barangay", "city": "City", "people_risk": "People",
-                                          "vuln_risk": "Under 5 or 65+"}),
+            st.dataframe(f.sort_values("vuln_km2" if by_density else "vuln_risk", ascending=False)[["barangay", "city", "vuln_km2", "people_risk", "vuln_risk"]]
+                         .round(0).rename(columns={"barangay": "Barangay", "city": "City", "vuln_km2": "Per km²",
+                                                   "people_risk": "People", "vuln_risk": "Under 5 or 65+"}),
                          hide_index=True, height=560, width="stretch", column_config={
-                             k: st.column_config.NumberColumn(format="localized") for k in ["People", "Under 5 or 65+"]})
+                             k: st.column_config.NumberColumn(format="localized")
+                             for k in ["Per km²", "People", "Under 5 or 65+"]})
     st.caption("A rain trigger on the UP NOAH 100-year hazard map, not a flood model: it does not include river levels, "
                "tides or drainage, and shows where flooding is most likely, not its exact extent.")
 
