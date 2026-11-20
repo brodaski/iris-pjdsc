@@ -1,0 +1,13 @@
+# Raw downloads are large; see README for where to get them
+datasets/
+data/raw/
+__pycache__/
+.ipynb_checkpoints/
+.venv/
+.vs/
+.vscode/
+.DS_Store
+
+# Personal HDX API token, never commit
+hdx_token.txt
+.streamlit/secrets.toml

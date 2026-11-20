@@ -1,3 +1,10 @@
-model,corr,mae
-Seasonal only,0.739,41.027
-Seasonal + rain (lags 2 to 6),0.803,36.948
+test_year,model,weeks,corr,mae,mae_after_heavy_rain,weeks_after_heavy_rain
+2021,Baseline: seasonal,52,0.115,31.726,46.028,25
+2021,Seasonal + rain,52,0.172,30.002,42.891,25
+2021,Gradient boosting,52,0.046,30.882,44.167,25
+2022,Baseline: seasonal,52,0.567,57.3,73.6,20
+2022,Seasonal + rain,52,0.385,64.587,93.226,20
+2022,Gradient boosting,52,0.676,50.733,54.563,20
+2023,Baseline: seasonal,43,0.683,49.589,70.795,21
+2023,Seasonal + rain,43,0.831,39.199,60.796,21
+2023,Gradient boosting,43,0.747,40.738,65.371,21

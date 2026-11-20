@@ -1,5 +1,5 @@
-"""Shared rainfall helpers for the Metro Manila version: live CHIRPS from HDX, the Open-Meteo rainfall forecast,
-weekly shares and the case forecast. Same logic as app/app.py."""
+"""Rainfall helpers for the dashboard: live CHIRPS from HDX, the Open-Meteo rainfall forecast,
+weekly shares and the case forecast."""
 import io
 import math
 import os
@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+from scipy.stats import nbinom
 import streamlit as st
 
 DATA = Path(__file__).resolve().parent.parent / "data" / "processed"
@@ -19,6 +20,8 @@ OPEN_METEO = os.environ.get("OPEN_METEO_API", "https://api.open-meteo.com/v1/for
 FC_COEF = pd.read_csv(DATA / "forecast_coefs.csv")
 WEEKLY_P90 = pd.read_csv(DATA / "province_weekly_p90.csv")
 POINTS = pd.read_csv(DATA / "province_points.csv")
+ALPHA = float(pd.read_csv(DATA / "forecast_alpha.csv")["alpha"].iloc[0])   # negative binomial overdispersion
+NCR_CODE = "PH13074"
 
 
 def hdx_token():
@@ -106,40 +109,74 @@ def get_open_meteo(params):
     raise err
 
 
+def fetch_forecast_daily():
+    """Daily rain at one point per province from Open-Meteo, 21 days back to 16 days ahead. Raises on failure."""
+    resp = get_open_meteo({
+        "latitude": ",".join(map(str, POINTS["lat"])), "longitude": ",".join(map(str, POINTS["lon"])),
+        "daily": "precipitation_sum", "past_days": 21, "forecast_days": 16, "timezone": "Asia/Manila"})
+    resp.raise_for_status()
+    js = resp.json()
+    js = js if isinstance(js, list) else [js]
+    daily = pd.concat([pd.DataFrame({"PCODE": p, "day": pd.to_datetime(j["daily"]["time"]),
+                                     "mm": j["daily"]["precipitation_sum"]})
+                       for p, j in zip(POINTS["PCODE"], js)], ignore_index=True)
+    daily["mm"] = pd.to_numeric(daily["mm"], errors="coerce").fillna(0)
+    return daily
+
+
+def save_snapshot(daily, fetched, folder=DATA):
+    """Write the small committed fallback: Metro Manila daily rain and the weekly share of provinces."""
+    ncr = daily[daily["PCODE"] == NCR_CODE][["PCODE", "day", "mm"]].assign(fetched=fetched)
+    ncr.assign(day=ncr["day"].dt.strftime("%Y-%m-%d")).to_csv(folder / "forecast_snapshot_ncr.csv", index=False)
+    share = daily_share(daily).rename("share").reset_index()
+    share.assign(week_start=share["week_start"].dt.strftime("%Y-%m-%d")).to_csv(
+        folder / "forecast_snapshot_share.csv", index=False)
+
+
+def load_snapshot(folder=DATA):
+    """(Metro Manila daily rain, weekly share, fetch time) from the snapshot files, or None if missing."""
+    try:
+        ncr = pd.read_csv(folder / "forecast_snapshot_ncr.csv", parse_dates=["day", "fetched"])
+        share = pd.read_csv(folder / "forecast_snapshot_share.csv", parse_dates=["week_start"])
+    except (OSError, ValueError):
+        return None
+    fetched = ncr.pop("fetched").iloc[0]
+    return ncr, share.set_index("week_start")["share"], fetched
+
+
+def _today():
+    return pd.Timestamp.now(tz="Asia/Manila").tz_localize(None).normalize()
+
+
 @st.cache_data(ttl=3 * 3600, show_spinner="Getting the 16-day rainfall forecast...")
 def rain_forecast():
-    """Daily rain at one point per province, from 21 days ago to 16 days ahead (Open-Meteo weather models; no key).
-    Returns (DataFrame of PCODE, day, mm, is_forecast, or None, source text). The last good download is kept in
-    ~/.iris and used, with its date, when Open-Meteo cannot be reached."""
-    saved = CACHE / "open_meteo_forecast.csv"
+    """Rain forecast for the dashboard: (Metro Manila daily rain with is_forecast, weekly share of provinces with an
+    extreme week, source text, status). Status is "live", "saved" (last download on this computer, up to 7 days
+    old) or "snapshot" (the copy shipped in data/processed, always available, dated). Never returns None, so the
+    Outlook tab always has a forecast to show, with its date."""
+    saved = CACHE
     try:
-        resp = get_open_meteo({
-            "latitude": ",".join(map(str, POINTS["lat"])), "longitude": ",".join(map(str, POINTS["lon"])),
-            "daily": "precipitation_sum", "past_days": 21, "forecast_days": 16, "timezone": "Asia/Manila"})
-        resp.raise_for_status()
-        js = resp.json()
-        js = js if isinstance(js, list) else [js]
-        now = pd.Timestamp.now(tz="Asia/Manila")
-        daily = pd.concat([pd.DataFrame({"PCODE": p, "day": pd.to_datetime(j["daily"]["time"]),
-                                         "mm": j["daily"]["precipitation_sum"]})
-                           for p, j in zip(POINTS["PCODE"], js)], ignore_index=True)
-        daily["mm"] = pd.to_numeric(daily["mm"], errors="coerce").fillna(0)
-        daily["is_forecast"] = daily["day"] >= now.tz_localize(None).normalize()
+        daily = fetch_forecast_daily()
+        now = pd.Timestamp.now(tz="Asia/Manila").tz_localize(None)
         try:
-            CACHE.mkdir(parents=True, exist_ok=True)
-            daily.assign(fetched=now.tz_localize(None)).to_csv(saved, index=False)
+            saved.mkdir(parents=True, exist_ok=True)
+            save_snapshot(daily, now.strftime("%Y-%m-%d %H:%M"), saved)
         except OSError:
             pass
-        return daily, f"Open-Meteo forecast, fetched {now:%d %b %Y %H:%M}"
+        ncr = daily[daily["PCODE"] == NCR_CODE][["day", "mm"]].reset_index(drop=True)
+        result = ncr, daily_share(daily), f"Open-Meteo forecast, fetched {now:%d %b %Y %H:%M}", "live"
     except Exception as e:
-        reason = f"Open-Meteo forecast not reachable ({type(e).__name__})"
-        if saved.exists():
-            daily = pd.read_csv(saved, parse_dates=["day", "fetched"])
-            fetched = daily.pop("fetched").iloc[0]
-            daily["is_forecast"] = daily["day"] >= pd.Timestamp.now(tz="Asia/Manila").tz_localize(None).normalize()
-            if pd.Timestamp.now() - fetched < pd.Timedelta(days=7):
-                return daily, f"{reason}; showing the forecast saved on {fetched:%d %b %Y %H:%M}"
-        return None, reason
+        reason = f"Open-Meteo not reachable ({type(e).__name__})"
+        snap = load_snapshot(saved)
+        if snap is not None and pd.Timestamp.now() - snap[2] < pd.Timedelta(days=7):
+            result = snap[0][["day", "mm"]], snap[1], f"{reason}; showing the forecast saved on {snap[2]:%d %b %Y %H:%M}", "saved"
+        else:
+            snap = load_snapshot(DATA)
+            result = (snap[0][["day", "mm"]], snap[1],
+                      f"{reason}; showing the forecast bundled with the app, fetched {snap[2]:%d %b %Y %H:%M}", "snapshot")
+    ncr, share, source, status = result
+    ncr = ncr.assign(is_forecast=ncr["day"] >= _today())
+    return ncr, share, source, status
 
 
 def forecast(share, as_of, horizon=6, future=None):
@@ -156,3 +193,11 @@ def forecast(share, as_of, horizon=6, future=None):
                 for L, c in zip(FC_COEF["lag_weeks"], FC_COEF["coef"]))
         rows.append({"week_start": target, "weeks_ahead": h, "rise_pct": (math.exp(z) - 1) * 100})
     return pd.DataFrame(rows)
+
+
+def case_range(mean, low=0.1, high=0.9, alpha=ALPHA):
+    """Range of weekly case counts around an expected value, from the negative binomial fit (variance = mean +
+    alpha * mean^2). It shows week-to-week noise in counts, not uncertainty in the model's coefficients."""
+    n = 1 / alpha
+    p = n / (n + pd.Series(mean, dtype=float))
+    return nbinom.ppf(low, n, p), nbinom.ppf(high, n, p)
